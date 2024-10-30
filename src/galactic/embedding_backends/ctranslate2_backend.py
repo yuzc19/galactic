@@ -55,7 +55,10 @@ class CT2EmbeddingModel(EmbeddingModelBase):
         self.model = ctranslate2.Encoder(
             model_path,
             device=self.device,
+            device_index=list(range(8)),
+            inter_threads=8,
             intra_threads=multiprocessing.cpu_count(),
+            flash_attention=True,
         )
         self.max_length = max_length
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -69,7 +72,7 @@ class CT2EmbeddingModel(EmbeddingModelBase):
             self.batch_size = 1
 
     def _select_batch_size(self):
-        current_batch_size = 4096
+        current_batch_size = 64
         sample_batch = [[11] * self.max_length] * current_batch_size
         while current_batch_size > 0:
             try:
@@ -140,6 +143,8 @@ class CT2EmbeddingModel(EmbeddingModelBase):
         offsets = tokenized["offsets"]
         outputs = None
         for i in range(0, len(inputs["input_ids"]), self.batch_size):
+            import time
+            start = time.time()
             batch = inputs["input_ids"][i : i + self.batch_size]
             batch_out = self.model.forward_batch(batch).pooler_output
             if self.device == "cuda":
@@ -154,6 +159,8 @@ class CT2EmbeddingModel(EmbeddingModelBase):
                 outputs = batch_out
             else:
                 outputs = np.concatenate([outputs, batch_out], axis=0)
+            end = time.time()
+            print(f"Batch {i} took {end - start} seconds")
 
         # use offsets to average each text's embeddings
         embs = []
